@@ -42,6 +42,7 @@ public class EditorUI {
     private boolean isUndoRedoOperation = false;
     private final DocumentService documentService;
     private final OperationService operationService;
+    private boolean isProcessingRemoteUpdate = false;
     private Button backButton;
     public EditorUI(Stage primaryStage, ServerConnection connection, DocumentService documentService, OperationService operationService) {
         this.primaryStage = primaryStage;
@@ -83,12 +84,34 @@ public class EditorUI {
         primaryStage.setTitle("Collaborative Editor");
         primaryStage.show();
     }
+    private void handleServerUpdate(String message) {
+        Platform.runLater(() -> {
+            try {
+                JsonObject update = JsonParser.parseString(message).getAsJsonObject();
+                String type = update.get("type").getAsString();
 
+                if ("DOCUMENT_UPDATE".equals(type)) {
+
+                    String senderId = update.get("userId").getAsString();
+                    // Only update if change came from another user
+                    if (!senderId.equals(userId)) {
+                        isProcessingRemoteUpdate = true;
+                        String content = update.get("content").getAsString();
+                        editor.setInitialContent(content);
+                        isProcessingRemoteUpdate = false;
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Error processing update: " + e.getMessage());
+            }
+        });
+    }
     private void setupTextListeners() {
         editor.getTextArea().textProperty().addListener((obs, oldText, newText) -> {
-            if (isUndoRedoOperation) return;
+            if (isUndoRedoOperation || isProcessingRemoteUpdate) return;
 
-            // Calculate difference
+
+            // Calculate position difference
             int diffPos = 0;
             while (diffPos < oldText.length() &&
                     diffPos < newText.length() &&
@@ -96,26 +119,15 @@ public class EditorUI {
                 diffPos++;
             }
 
-            // Handle inserts
+            // Handle insert/delete via WebSocket
             if (newText.length() > oldText.length()) {
-                char insertedChar = newText.charAt(diffPos);
-                try {
-                    operationService.insertOperation(currentDocId, userId, diffPos, insertedChar);
-                } catch (Exception e) {
-                    showAlert("Error", "Failed to sync insert: " + e.getMessage());
-                }
+                operationService.insertOperation(currentDocId, userId, diffPos, newText.charAt(diffPos));
             }
-            // Handle deletes
             else if (newText.length() < oldText.length()) {
-                try {
-                    operationService.deleteOperation(currentDocId, userId, diffPos);
-                } catch (Exception e) {
-                    showAlert("Error", "Failed to sync delete: " + e.getMessage());
-                }
+                operationService.deleteOperation(currentDocId, userId, diffPos);
             }
         });
     }
-
     private void importDocument() {
         FileChooser fileChooser = new FileChooser();
         fileChooser.getExtensionFilters().add(
@@ -252,37 +264,25 @@ public class EditorUI {
     }
 
     private void handleServerMessage(String message) {
-        if (message == null || message.trim().isEmpty()) {
-            System.out.println("Received empty message, ignoring");
-            return;
-        }
+        JsonObject json = JsonParser.parseString(message).getAsJsonObject();
+        String type = json.get("type").getAsString();
+        String senderUserId = json.get("userId").getAsString();
 
-        try {
-            JsonObject json = JsonParser.parseString(message).getAsJsonObject();
-            String type = json.get("type").getAsString();
+        // Ignore our own updates (prevent echo)
+        if (senderUserId.equals(userId)) return;
 
-            switch (type) {
-                case "DOCUMENT_UPDATE":
-                    editor.setInitialContent(json.get("content").getAsString());
-                    break;
-                case "CURSOR_UPDATE":
-                    editor.updateRemoteCursor(
-                            json.get("userId").getAsString(),
-                            json.get("position").getAsInt()
-                    );
-                    break;
-                case "USER_LIST":
-                    updateUserList(json.get("users").getAsJsonArray());
-                    break;
-                default:
-                    System.out.println("Unknown message type: " + type);
-            }
-        } catch (Exception e) {
-            System.err.println("Error processing message: " + e.getMessage());
-            System.err.println("Original message: " + message);
+        switch (type) {
+            case "DOCUMENT_UPDATE":
+                editor.setInitialContent(json.get("content").getAsString());
+                break;
+            case "CURSOR_UPDATE":
+                editor.updateRemoteCursor(
+                        senderUserId,
+                        json.get("position").getAsInt()
+                );
+                break;
         }
     }
-
     private void showEditorUI(String initialContent) {
         BorderPane root = new BorderPane();
 
@@ -344,6 +344,7 @@ public class EditorUI {
 
         primaryStage.setScene(new Scene(root, 800, 600));
         setupTextListeners();
+        connection.subscribeToSessionUpdates(currentDocId, this::handleServerUpdate);
 
     }
     private void updateUserList(JsonArray users) {

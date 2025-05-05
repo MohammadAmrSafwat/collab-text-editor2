@@ -16,7 +16,7 @@ public class MainApp extends Application {
         try {
             ServerConnection connection = new ServerConnection();
             DocumentService documentService = new DocumentService(API_BASE_URL);
-            OperationService OperationService = new OperationService(API_BASE_URL);
+            OperationService OperationService = new OperationService(connection);
             new EditorUI(primaryStage, connection, documentService, OperationService);
         } catch (Exception e) {
             System.err.println("Failed to start application: " + e.getMessage());

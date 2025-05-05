@@ -1,7 +1,9 @@
 package org.example.client.network;
 
+import com.google.gson.JsonObject;
 import org.example.client.model.ClientMessage;
 import org.springframework.messaging.converter.MappingJackson2MessageConverter;
+import org.springframework.messaging.converter.StringMessageConverter;
 import org.springframework.messaging.simp.stomp.*;
 import org.springframework.util.concurrent.ListenableFutureCallback;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
@@ -12,6 +14,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 /**
  * Handles WebSocket communication with the collaboration server
@@ -51,7 +54,9 @@ public class ServerConnection {
 
         StandardWebSocketClient client = new StandardWebSocketClient();
         stompClient = new WebSocketStompClient(client);
-        stompClient.setMessageConverter(new MappingJackson2MessageConverter());
+
+        // Change to StringMessageConverter
+        stompClient.setMessageConverter(new StringMessageConverter());
 
         String url = serverUrl.replace("http", "ws") + "/ws-collab/websocket";
         System.out.println("Connecting to WebSocket at: " + url);
@@ -64,8 +69,25 @@ public class ServerConnection {
                 System.out.println("WebSocket connection established");
 
                 if (sessionId != null) {
-                    // Subscribe to document updates only if we have a session ID
+                    // Subscribe to document updates
                     session.subscribe("/topic/session." + sessionId, new StompFrameHandler() {
+                        @Override
+                        public Type getPayloadType(StompHeaders headers) {
+                            return String.class; // Expect raw JSON strings
+                        }
+
+                        @Override
+                        public void handleFrame(StompHeaders headers, Object payload) {
+                            if (payload != null) {
+                                // Add debug logging
+                                System.out.println("Received message: " + payload.toString());
+                                messageQueue.add(payload.toString());
+                            }
+                        }
+                    });
+
+                    // Add subscription for cursor updates if needed
+                    session.subscribe("/topic/cursors." + sessionId, new StompFrameHandler() {
                         @Override
                         public Type getPayloadType(StompHeaders headers) {
                             return String.class;
@@ -73,14 +95,11 @@ public class ServerConnection {
 
                         @Override
                         public void handleFrame(StompHeaders headers, Object payload) {
-                            if (payload != null) {
-                                messageQueue.add(payload.toString());
-                            }
+                            // Handle cursor updates
                         }
                     });
                 }
             }
-
             @Override
             public void handleTransportError(StompSession session, Throwable exception) {
                 connected.set(false);
@@ -117,22 +136,55 @@ public class ServerConnection {
      * @param data The operation payload
      * @throws IllegalStateException if not connected to a session
      */
-    public void sendOperation(String type, Object data) throws IllegalStateException {
-        if (!connected.get() || stompSession == null || !stompSession.isConnected()) {
+    public void sendOperation(String type, Object data, String sessionId, String userId) throws IllegalStateException {
+        System.out.println("[DEBUG] Attempting send - Connected: " + isConnected() +
+                ", SessionID: " + sessionId +
+                ", UserID: " + userId);
+
+        if (!isConnected() || stompSession == null || !stompSession.isConnected()) {
             throw new IllegalStateException("Not connected to WebSocket server");
         }
         if (sessionId == null) {
-            throw new IllegalStateException("No session ID specified");
+            throw new IllegalStateException("No session ID specified. Current state: " +
+                    "UserID=" + userId +
+                    ", isConnected=" + isConnected());
         }
-
         try {
-            ClientMessage message = new ClientMessage(type, sessionId, userId, data);
-            stompSession.send("/app/session." + sessionId + "/operation", message);
+            JsonObject payload = new JsonObject();
+            payload.addProperty("type", type);
+            payload.addProperty("sessionId", sessionId);
+            payload.addProperty("userId", userId);
+
+            if (data instanceof JsonObject) {
+                payload.add("data", (JsonObject) data);
+            } else {
+                // Convert other data types to JSON as needed
+                payload.addProperty("data", data.toString());
+            }
+
+            stompSession.send("/app/document/operation", payload.toString());
+            System.out.println("Sent: " + payload); // Debug log
+
+            System.out.println("Sent operation: " + payload);
         } catch (Exception e) {
             System.err.println("Failed to send operation: " + e.getMessage());
         }
     }
+    public void subscribeToSessionUpdates(String sessionId, Consumer<String> messageHandler) {
+        if (!isConnected()) throw new IllegalStateException("Not connected");
 
+        stompSession.subscribe("/topic/session." + sessionId, new StompFrameHandler() {
+            @Override
+            public Type getPayloadType(StompHeaders headers) {
+                return String.class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+                messageHandler.accept((String) payload);
+            }
+        });
+    }
     /**
      * Receives a message from the server
      * @return The received message, or null if timeout occurs

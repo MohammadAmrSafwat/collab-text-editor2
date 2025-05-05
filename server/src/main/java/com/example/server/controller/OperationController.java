@@ -3,47 +3,61 @@ package com.example.server.controller;
 import com.example.server.model.Session;
 import com.example.server.service.CollaborationService;
 import com.example.server.service.crdt.CRDTOperation;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import org.springframework.messaging.handler.annotation.DestinationVariable;
+import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.stereotype.Controller;
 
-import java.util.Map;
-
-@RestController
-@RequestMapping("/api/operations")
+@Controller
 public class OperationController {
     private final CollaborationService collaborationService;
+    private final SimpMessagingTemplate messagingTemplate;
 
-    public OperationController(CollaborationService collaborationService) {
+    public OperationController(CollaborationService collaborationService,
+                               SimpMessagingTemplate messagingTemplate) {
         this.collaborationService = collaborationService;
+        this.messagingTemplate = messagingTemplate;
     }
 
-    @PostMapping
-    public ResponseEntity<String> handleOperation(@RequestBody Map<String, String> request) {
+    @MessageMapping("/document/operation") // Matches client's destination
+    public void handleOperation(@Payload String message) {
         try {
-            String docId = request.get("docId");
-            String userId = request.get("userId");
-            String type = request.get("type");
+            System.out.println("Received operation: " + message);
+            JsonObject payload = JsonParser.parseString(message).getAsJsonObject();
+            String type = payload.get("type").getAsString();
+            String sessionId = payload.get("sessionId").getAsString();
+            String userId = payload.get("userId").getAsString();
+            JsonObject data = payload.getAsJsonObject("data");
 
-            Session session = collaborationService.getSession(docId);
-            if (session == null) {
-                return ResponseEntity.notFound().build();
-            }
+            Session session = collaborationService.getSession(sessionId);
+            if (session == null) return;
 
             if ("insert".equals(type)) {
-                int position = Integer.parseInt(request.get("position"));
-                char character = request.get("character").charAt(0);
+                int position = data.get("position").getAsInt();
+                char character = data.get("character").getAsString().charAt(0);
                 CRDTOperation op = session.getCrdt().createInsertOperation(position, userId, character);
                 session.getCrdt().applyOperation(op);
             }
             else if ("delete".equals(type)) {
-                int position = Integer.parseInt(request.get("position"));
+                int position = data.get("position").getAsInt();
                 CRDTOperation op = session.getCrdt().createDeleteOperation(position, userId);
                 session.getCrdt().applyOperation(op);
             }
 
-            return ResponseEntity.ok().build();
+            // Broadcast update
+            JsonObject update = new JsonObject();
+            update.addProperty("type", "DOCUMENT_UPDATE");
+            update.addProperty("sessionId", sessionId);
+            update.addProperty("content", session.getCrdt().getContent());
+            update.addProperty("userId", userId);
+
+            messagingTemplate.convertAndSend("/topic/session." + sessionId, update.toString());
+
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(e.getMessage());
+            System.err.println("Error processing operation: " + e.getMessage());
         }
     }
 }
