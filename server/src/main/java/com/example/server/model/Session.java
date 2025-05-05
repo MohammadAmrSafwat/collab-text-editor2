@@ -8,7 +8,8 @@ public class Session {
     private String sessionId;
     private String editorCode;
     private String viewerCode;
-
+    private String docide;
+    private String docidv;
     private Set<String> editors = ConcurrentHashMap.newKeySet();
     private Set<String> viewers = ConcurrentHashMap.newKeySet();
 
@@ -18,8 +19,11 @@ public class Session {
 
     public Session(String sessionId) {
         this.sessionId = sessionId;
-        this.editorCode = generateRandomCode(6);
-        this.viewerCode = generateRandomCode(6);
+        String documentId = "doc_" + System.currentTimeMillis();
+        docide = "edit-" + documentId;
+        docidv ="view-" + documentId;
+        this.editorCode =   docide.substring(0, docide.length() - 3);
+        this.viewerCode =  docidv.substring(0, docidv.length() - 3) ;
     }
 
     private String generateRandomCode(int lenght) {

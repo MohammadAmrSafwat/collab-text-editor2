@@ -354,21 +354,33 @@ public class EditorUI {
             shareStage.close();
         }
 
+        // Generate codes in the format: view-doc_[id] and edit-doc_[id]
+        String baseId = currentDocId.replace("doc_", ""); // Remove "doc_" prefix if present
+        String viewerCode = "view-doc_" + baseId.substring(0, baseId.length() - 3);
+        String editorCode = "edit-doc_" + baseId.substring(0, baseId.length() - 3);
+
         shareStage = new Stage();
         VBox root = new VBox(20,
                 new Label("Share This Document") {{
                     setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
                 }},
                 new Label("Viewer Code (Read-Only)"),
-                new TextField(currentDocId + "-view") {{
+                new TextField(viewerCode) {{
                     setEditable(false);
                 }},
                 new Label("Editor Code (Full Access)"),
-                new TextField(currentDocId + "-edit") {{
+                new TextField(editorCode) {{
                     setEditable(false);
                 }},
                 new Button("Copy All") {{
-                    setOnAction(e -> copyAllCodesToClipboard());
+                    setOnAction(e -> {
+                        String content = "Viewer Code: " + viewerCode + "\nEditor Code: " + editorCode;
+                        Clipboard clipboard = Clipboard.getSystemClipboard();
+                        ClipboardContent clipboardContent = new ClipboardContent();
+                        clipboardContent.putString(content);
+                        clipboard.setContent(clipboardContent);
+                        showAlert("Copied", "All codes copied to clipboard!");
+                    });
                 }},
                 new Button("Close") {{
                     setOnAction(e -> shareStage.close());
@@ -409,8 +421,9 @@ public class EditorUI {
 
 
     private void copyAllCodesToClipboard() {
-        String viewerCode = currentDocId + "-view";
-        String editorCode = currentDocId + "-edit";
+        String baseId = currentDocId.replace("doc_", ""); // Remove "doc_" prefix if present
+        String viewerCode = "view-doc_" + baseId.substring(0, baseId.length() - 3);
+        String editorCode = "edit-doc_" + baseId.substring(0, baseId.length() - 3);
         String content = "Viewer Code: " + viewerCode + "\nEditor Code: " + editorCode;
 
         Clipboard clipboard = Clipboard.getSystemClipboard();
