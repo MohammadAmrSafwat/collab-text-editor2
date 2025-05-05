@@ -222,14 +222,22 @@ private Button backButton;
     private void showEditorUI(String initialContent) {
         BorderPane root = new BorderPane();
 
-        // Top Bar
-        HBox topBar = new HBox(10,
+        // Top Bar with Back Button
+        HBox topBar = new HBox(10);
+        topBar.setPadding(new Insets(10));
+        topBar.setAlignment(Pos.CENTER_LEFT);
+
+        this.backButton = new Button("← Back");
+        backButton.setStyle("-fx-font-size: 14px;");
+        backButton.setOnAction(e -> returnToInitialScreen());
+
+        topBar.getChildren().addAll(
+                backButton,
                 new Label("Document: " + currentDocId.substring(0, Math.min(8, currentDocId.length()))),
                 new Button("Export") {{
                     setOnAction(e -> exportDocument());
                 }}
         );
-        topBar.setPadding(new Insets(10));
 
         // Editor Area
         editor = new TextAreaWithCursors(connection, currentDocId, userId, isEditor);
@@ -264,6 +272,20 @@ private Button backButton;
                 setStyle("-fx-text-fill: " + getColorForUser(userId) + ";");
             }});
         });
+    }
+    private void returnToInitialScreen() {
+        // Clean up resources
+        if (connection != null) {
+            connection.disconnect();
+        }
+
+        // Reset document state
+        currentDocId = null;
+        isEditor = false;
+        editor = null;
+
+        // Show initial screen
+        showInitialScreen();
     }
 
     private String getColorForUser(String userId) {
