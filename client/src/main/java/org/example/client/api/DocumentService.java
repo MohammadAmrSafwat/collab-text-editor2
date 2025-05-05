@@ -54,19 +54,14 @@ public class DocumentService {
             headers.setContentType(MediaType.APPLICATION_JSON);
             HttpEntity<String> entity = new HttpEntity<>(request.toString(), headers);
 
-            // Corrected endpoint URL - removed duplicate 'documents'
             ResponseEntity<String> response = restTemplate.postForEntity(
-                    apiBaseUrl + "/documents/import",  // Changed from "/documents/documents/import"
+                    apiBaseUrl + "/documents/documents/import",
                     entity,
                     String.class
             );
 
-            if (!response.getStatusCode().is2xxSuccessful()) {
-                throw new Exception("Server returned: " + response.getStatusCode());
-            }
-
             return JsonParser.parseString(response.getBody()).getAsJsonObject();
-        } catch (Exception e) {
+        } catch (RestClientException e) {
             throw new Exception("Failed to import document: " + e.getMessage(), e);
         }
     }

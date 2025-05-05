@@ -65,42 +65,43 @@ public class DocumentController {
                     .body("{\"error\":\"Failed to create document: " + e.getMessage() + "\"}");
         }
     }
-        @PostMapping(value = "/import", consumes = MediaType.APPLICATION_JSON_VALUE)
-        public ResponseEntity<String> importDocument(@RequestBody Map<String, String> request) {
-            try {
-                if (!request.containsKey("userId") || !request.containsKey("content")) {
-                    return ResponseEntity.badRequest().body("{\"error\":\"userId and content are required\"}");
-                }
-
-                String userId = request.get("userId");
-                String content = request.get("content");
-
-                // Create new session/document
-                String documentId = "doc_" + System.currentTimeMillis();
-                Session session = new Session(documentId);
-                collaborationService.addSession(session);
-                session.addEditor(userId);
-
-                // Initialize CRDT with imported content
-                for (int i = 0; i < content.length(); i++) {
-                    CRDTOperation op = session.getCrdt().createInsertOperation(i, userId, content.charAt(i));
-                    session.getCrdt().applyOperation(op);
-                }
-
-                JsonObject response = new JsonObject();
-                response.addProperty("documentId", documentId);
-                response.addProperty("viewCode", session.getViewerCode());
-                response.addProperty("editCode", session.getEditorCode());
-                response.addProperty("content", session.getCrdt().getContent());
-                response.addProperty("isEditor", true);
-
-                return ResponseEntity.ok(response.toString());
-            } catch (Exception e) {
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        .body("{\"error\":\"Failed to import document: " + e.getMessage() + "\"}");
+    @PostMapping("/documents/import")
+    public ResponseEntity<String> importDocument(@RequestBody Map<String, String> request) {
+        try {
+            if (!request.containsKey("userId") || !request.containsKey("content")) {
+                return ResponseEntity.badRequest().body("{\"error\":\"userId and content are required\"}");
             }
-        }
 
+            String userId = request.get("userId");
+            String content = request.get("content");
+
+            String documentId = "doc_" + System.currentTimeMillis();
+            Session session = new Session(documentId);
+            System.out.println("Created new session:");
+            System.out.println("Document ID: " + documentId);
+            System.out.println("View Code: " + session.getViewerCode());
+            System.out.println("Edit Code: " + session.getEditorCode());
+            collaborationService.addSession(session);
+            session.addEditor(userId);
+            // Initialize CRDT with imported content
+            for (int i = 0; i < content.length(); i++) {
+                CRDTOperation op = session.getCrdt().createInsertOperation(i, userId, content.charAt(i));
+                session.getCrdt().applyOperation(op);
+            }
+
+            JsonObject response = new JsonObject();
+            response.addProperty("documentId", documentId);
+            response.addProperty("viewCode", session.getViewerCode());
+            response.addProperty("editCode", session.getEditorCode());
+            response.addProperty("content", session.getCrdt().getContent());
+            response.addProperty("isEditor", true);
+
+            return ResponseEntity.ok(response.toString());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("{\"error\":\"Failed to import document: " + e.getMessage() + "\"}");
+        }
+    }
     @PostMapping("/sessions/join")
     public ResponseEntity<String> joinSession(@RequestBody Map<String, String> request) {
         try {
