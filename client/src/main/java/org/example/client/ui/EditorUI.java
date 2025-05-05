@@ -18,7 +18,6 @@ import org.example.client.network.ServerConnection;
 import org.example.client.ui.components.TextAreaWithCursors;
 import org.springframework.http.*;
 import org.springframework.web.client.RestTemplate;
-import org.example.client.api.DocumentService;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import java.util.ArrayDeque;
@@ -40,10 +39,12 @@ public class EditorUI {
     private final Deque<String> undoStack = new ArrayDeque<>();
     private final Deque<String> redoStack = new ArrayDeque<>();
     private boolean isUndoRedoOperation = false;
-private Button backButton;
+    private final DocumentService documentService;
+    private Button backButton;
     public EditorUI(Stage primaryStage, ServerConnection connection, DocumentService documentService) {
         this.primaryStage = primaryStage;
         this.connection = connection;
+        this.documentService = documentService;
         connection.connect(WS_BASE_URL);
         this.userId = "user_" + System.currentTimeMillis();
         showInitialScreen();
@@ -104,11 +105,9 @@ private Button backButton;
         new Thread(() -> {
             try {
 
-                DocumentService documentService = null;
-                JsonObject response = documentService.createDocument(userId);
+                JsonObject response = documentService.createDocument(userId);  // Use the stored service
                 this.currentDocId = response.get("documentId").getAsString();
                 this.isEditor = true;
-
                 Platform.runLater(() -> {
                     showEditorUI("");
                     showShareCodes();
