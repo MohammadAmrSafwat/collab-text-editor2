@@ -1,5 +1,6 @@
 package org.example.client.ui;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import javafx.application.Platform;
@@ -10,29 +11,31 @@ import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import org.example.client.api.DocumentService;
 import org.example.client.network.ServerConnection;
 import org.example.client.ui.components.TextAreaWithCursors;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.web.client.RestTemplate;
-
+import org.example.client.api.DocumentService;
 import java.io.File;
-import java.net.http.HttpHeaders;
 import java.nio.file.Files;
 
 public class EditorUI {
+    private static final String API_BASE_URL = "http://localhost:8080/api";
+    private static final String WS_BASE_URL = "ws://localhost:8080";
+
     private final Stage primaryStage;
     private final ServerConnection connection;
     private final String userId;
     private String currentDocId;
     private boolean isEditor;
     private TextAreaWithCursors editor;
-
-    public EditorUI(Stage primaryStage, ServerConnection connection) {
+    private volatile boolean running = true;
+private Button backButton;
+    public EditorUI(Stage primaryStage, ServerConnection connection, DocumentService documentService) {
         this.primaryStage = primaryStage;
         this.connection = connection;
-        connection.connect("ws://localhost:8080");
+        connection.connect(WS_BASE_URL);
         this.userId = "user_" + System.currentTimeMillis();
         showInitialScreen();
     }
@@ -68,15 +71,6 @@ public class EditorUI {
         primaryStage.show();
     }
 
-    private void createNewDocument() {
-        // Simulate server response for demo
-        this.currentDocId = generateRandomCode(1);
-        createSession(currentDocId);
-        this.isEditor = true;
-        showEditorUI("");
-        showShareCodes();
-    }
-
     private void importDocument() {
         FileChooser fileChooser = new FileChooser();
         fileChooser.getExtensionFilters().add(
@@ -86,75 +80,103 @@ public class EditorUI {
         if (file != null) {
             try {
                 String content = new String(Files.readAllBytes(file.toPath()));
-                this.currentDocId = generateRandomCode(1);
-                createSession();
+                this.currentDocId = generateRandomCode(8);
                 this.isEditor = true;
                 showEditorUI(content);
                 showShareCodes();
+                processServerMessages();
             } catch (Exception e) {
                 showAlert("Error", "Failed to import file: " + e.getMessage());
             }
         }
     }
-    public JsonObject createNewDocument() throws Exception {
-        RestTemplate restTemplate = new RestTemplate();
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
 
-        JsonObject request = new JsonObject();
-        request.addProperty("userId", this.userId);
-        request.addProperty("content", ""); // Empty content for new document
+    public void createNewDocument() {
+        new Thread(() -> {
+            try {
 
-        HttpEntity<String> entity = new HttpEntity<>(request.toString(), headers);
-        ResponseEntity<String> response = restTemplate.postForEntity(
-                "http://localhost:8080/api/documents",
-                entity,
-                String.class
-        );
+                DocumentService documentService = null;
+                JsonObject response = documentService.createDocument(userId);
+                this.currentDocId = response.get("documentId").getAsString();
+                this.isEditor = true;
 
-        JsonObject responseJson = JsonParser.parseString(response.getBody()).getAsJsonObject();
-        this.currentDocId = responseJson.get("documentId").getAsString();
-        return responseJson;
+                Platform.runLater(() -> {
+                    showEditorUI("");
+                    showShareCodes();
+                    processServerMessages();
+                });
+            } catch (Exception e) {
+                Platform.runLater(() -> {
+                    Alert alert = new Alert(Alert.AlertType.ERROR);
+                    alert.setTitle("Connection Error");
+                    alert.setHeaderText("Failed to connect to server");
+                    alert.setContentText("Please make sure the server is running and try again.");
+                    alert.showAndWait();
+                });
+            }
+        }).start();
     }
 
-    private String generateRandomCode(int lenght) {
-        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"; // Letters AND numbers
+    public void joinSession(String sessionCode) {
+        if (sessionCode == null || sessionCode.trim().isEmpty()) {
+            showAlert("Error", "Please enter a session code");
+            return;
+        }
+
+        new Thread(() -> {
+            try {
+                RestTemplate restTemplate = new RestTemplate();
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+
+                JsonObject request = new JsonObject();
+                request.addProperty("sessionCode", sessionCode);
+                request.addProperty("userId", this.userId);
+
+                HttpEntity<String> entity = new HttpEntity<>(request.toString(), headers);
+                ResponseEntity<String> response = restTemplate.postForEntity(
+                        API_BASE_URL + "/sessions/join",
+                        entity,
+                        String.class
+                );
+
+                JsonObject responseJson = JsonParser.parseString(response.getBody()).getAsJsonObject();
+                this.currentDocId = responseJson.get("documentId").getAsString();
+                this.isEditor = responseJson.get("isEditor").getAsBoolean();
+                String initialContent = responseJson.get("content").getAsString();
+
+                Platform.runLater(() -> {
+                    showEditorUI(initialContent);
+                    processServerMessages();
+                    if (!isEditor) {
+                        editor.getTextArea().setEditable(false);
+                        showAlert("Info", "You've joined as a viewer (read-only)");
+                    }
+                });
+            } catch (Exception e) {
+                Platform.runLater(() ->
+                        showAlert("Error", "Failed to join session: " + e.getMessage())
+                );
+            }
+        }).start();
+    }
+
+    private String generateRandomCode(int length) {
+        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < lenght; i++) {
+        for (int i = 0; i < length; i++) {
             int index = (int) (Math.random() * chars.length());
             sb.append(chars.charAt(index));
         }
         return sb.toString();
     }
 
-    public JsonObject joinSession(String sessionCode) throws Exception {
-        RestTemplate restTemplate = new RestTemplate();
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-
-        JsonObject request = new JsonObject();
-        request.addProperty("sessionCode", sessionCode);
-        request.addProperty("userId", this.userId);
-
-        HttpEntity<String> entity = new HttpEntity<>(request.toString(), headers);
-        ResponseEntity<String> response = restTemplate.postForEntity(
-                "http://localhost:8080/api/sessions/join",
-                entity,
-                String.class
-        );
-
-        return JsonParser.parseString(response.getBody()).getAsJsonObject();
-    }
-    private void createSession() {
-        currentDocId;
-        userid;
-    }
     private void processServerMessages() {
         new Thread(() -> {
-            while (true) {
+            while (running) {
                 try {
                     String message = connection.receiveMessage();
-                    if (message != null) {  // Additional null check
+                    if (message != null) {
                         Platform.runLater(() -> handleServerMessage(message));
                     }
                 } catch (InterruptedException e) {
@@ -179,18 +201,15 @@ public class EditorUI {
                 case "DOCUMENT_UPDATE":
                     editor.setInitialContent(json.get("content").getAsString());
                     break;
-
                 case "CURSOR_UPDATE":
                     editor.updateRemoteCursor(
                             json.get("userId").getAsString(),
                             json.get("position").getAsInt()
                     );
                     break;
-
                 case "USER_LIST":
                     updateUserList(json.get("users").getAsJsonArray());
                     break;
-
                 default:
                     System.out.println("Unknown message type: " + type);
             }
@@ -199,6 +218,7 @@ public class EditorUI {
             System.err.println("Original message: " + message);
         }
     }
+
     private void showEditorUI(String initialContent) {
         BorderPane root = new BorderPane();
 
@@ -231,7 +251,7 @@ public class EditorUI {
         primaryStage.setScene(new Scene(root, 800, 600));
     }
 
-    private void updateUserList(com.google.gson.JsonArray users) {
+    private void updateUserList(JsonArray users) {
         VBox userList = (VBox) ((BorderPane) primaryStage.getScene().getRoot()).getRight();
         userList.getChildren().clear();
         userList.getChildren().add(new Label("Active Users") {{
@@ -245,7 +265,7 @@ public class EditorUI {
             }});
         });
     }
-    //using the user id to get color
+
     private String getColorForUser(String userId) {
         int hash = userId.hashCode();
         return String.format("#%06x", hash & 0xFFFFFF);
@@ -299,5 +319,10 @@ public class EditorUI {
                     showAndWait();
                 }}
         );
+    }
+
+    public void stop() {
+        running = false;
+        connection.disconnect();
     }
 }
