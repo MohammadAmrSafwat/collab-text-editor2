@@ -55,7 +55,7 @@ public class DocumentService {
             HttpEntity<String> entity = new HttpEntity<>(request.toString(), headers);
 
             ResponseEntity<String> response = restTemplate.postForEntity(
-                    apiBaseUrl + "/documents/import",
+                    apiBaseUrl + "/documents/documents/import",
                     entity,
                     String.class
             );
@@ -76,7 +76,7 @@ public class DocumentService {
             HttpEntity<String> entity = new HttpEntity<>(request.toString(), headers);
 
             ResponseEntity<String> response = restTemplate.postForEntity(
-                    apiBaseUrl + "/sessions/join",
+                    apiBaseUrl + "/documents/sessions/join",
                     entity,
                     String.class
             );

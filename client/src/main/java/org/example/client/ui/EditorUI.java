@@ -88,16 +88,35 @@ public class EditorUI {
 
         File file = fileChooser.showOpenDialog(primaryStage);
         if (file != null) {
-            try {
-                String content = new String(Files.readAllBytes(file.toPath()));
-                this.currentDocId = generateRandomCode(8);
-                this.isEditor = true;
-                showEditorUI(content);
-                showShareCodes();
-                processServerMessages();
-            } catch (Exception e) {
-                showAlert("Error", "Failed to import file: " + e.getMessage());
-            }
+            new Thread(() -> {
+                try {
+                    // Use DocumentService to import the file
+                    JsonObject response = documentService.importDocument(userId, file);
+
+                    // Update UI state from response
+                    this.currentDocId = response.get("documentId").getAsString();
+                    this.isEditor = response.get("isEditor").getAsBoolean();
+                    String content = response.get("content").getAsString();
+
+                    // Get share codes if available
+                    String viewCode = response.has("viewCode") ?
+                            response.get("viewCode").getAsString() : currentDocId + "-view";
+                    String editCode = response.has("editCode") ?
+                            response.get("editCode").getAsString() : currentDocId + "-edit";
+
+                    Platform.runLater(() -> {
+                        showEditorUI(content);
+                        if (isEditor) {
+                            showShareCodes();
+                        }
+                        processServerMessages();
+                    });
+                } catch (Exception e) {
+                    Platform.runLater(() ->
+                            showAlert("Error", "Failed to import file: " + e.getMessage())
+                    );
+                }
+            }).start();
         }
     }
 

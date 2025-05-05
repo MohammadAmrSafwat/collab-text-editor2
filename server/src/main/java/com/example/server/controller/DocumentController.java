@@ -35,7 +35,10 @@ public class DocumentController {
             // Rest of your implementation...
             String documentId = "doc_" + System.currentTimeMillis();
             Session session = new Session(documentId);
-
+            System.out.println("Created new session:");
+            System.out.println("Document ID: " + documentId);
+            System.out.println("View Code: " + session.getViewerCode());
+            System.out.println("Edit Code: " + session.getEditorCode());
             // Initialize CRDT if content exists
             if (!content.isEmpty()) {
                 for (int i = 0; i < content.length(); i++) {
@@ -74,9 +77,12 @@ public class DocumentController {
 
             String documentId = "doc_" + System.currentTimeMillis();
             Session session = new Session(documentId);
+            System.out.println("Created new session:");
+            System.out.println("Document ID: " + documentId);
+            System.out.println("View Code: " + session.getViewerCode());
+            System.out.println("Edit Code: " + session.getEditorCode());
             collaborationService.addSession(session);
             session.addEditor(userId);
-
             // Initialize CRDT with imported content
             for (int i = 0; i < content.length(); i++) {
                 CRDTOperation op = session.getCrdt().createInsertOperation(i, userId, content.charAt(i));
