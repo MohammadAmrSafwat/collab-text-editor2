@@ -22,7 +22,9 @@ public class CollaborationService {
         }
         return session;
     }
-
+    public void addSession(Session session) {
+        sessions.put(session.getSessionId(), session);
+    }
     public CRDTOperation processOperation(String sessionId, String userId, ClientOperation operation) {
         Session session = sessions.get(sessionId);
         if (session == null || !session.isEditor(userId)) {
