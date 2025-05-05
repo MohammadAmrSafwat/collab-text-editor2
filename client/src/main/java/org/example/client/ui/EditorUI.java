@@ -8,6 +8,8 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
@@ -17,13 +19,17 @@ import org.example.client.ui.components.TextAreaWithCursors;
 import org.springframework.http.*;
 import org.springframework.web.client.RestTemplate;
 import org.example.client.api.DocumentService;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.io.File;
 import java.nio.file.Files;
 
 public class EditorUI {
     private static final String API_BASE_URL = "http://localhost:8080/api";
     private static final String WS_BASE_URL = "ws://localhost:8080";
-
+    private Stage shareStage;
     private final Stage primaryStage;
     private final ServerConnection connection;
     private final String userId;
@@ -31,6 +37,9 @@ public class EditorUI {
     private boolean isEditor;
     private TextAreaWithCursors editor;
     private volatile boolean running = true;
+    private final Deque<String> undoStack = new ArrayDeque<>();
+    private final Deque<String> redoStack = new ArrayDeque<>();
+    private boolean isUndoRedoOperation = false;
 private Button backButton;
     public EditorUI(Stage primaryStage, ServerConnection connection, DocumentService documentService) {
         this.primaryStage = primaryStage;
@@ -220,29 +229,52 @@ private Button backButton;
     }
 
     private void showEditorUI(String initialContent) {
+
         BorderPane root = new BorderPane();
 
-        // Top Bar with Back Button
+        // Top Bar with buttons
         HBox topBar = new HBox(10);
         topBar.setPadding(new Insets(10));
         topBar.setAlignment(Pos.CENTER_LEFT);
+
 
         this.backButton = new Button("← Back");
         backButton.setStyle("-fx-font-size: 14px;");
         backButton.setOnAction(e -> returnToInitialScreen());
 
+
+        Button shareButton = new Button("Share");
+        shareButton.setStyle("-fx-font-size: 14px;");
+        shareButton.setOnAction(e -> showShareCodes());
+
+        // Undo/Redo buttons
+        Button undoButton = new Button("Undo (Ctrl+Z)");
+        undoButton.setOnAction(e -> undo());
+
+        Button redoButton = new Button("Redo (Ctrl+Y)");
+        redoButton.setOnAction(e -> redo());
+
         topBar.getChildren().addAll(
                 backButton,
+                undoButton,
+                redoButton,
                 new Label("Document: " + currentDocId.substring(0, Math.min(8, currentDocId.length()))),
                 new Button("Export") {{
                     setOnAction(e -> exportDocument());
-                }}
+                }},
+                shareButton
         );
 
         // Editor Area
+
         editor = new TextAreaWithCursors(connection, currentDocId, userId, isEditor);
         editor.setInitialContent(initialContent);
 
+        // Save initial state
+        saveStateToUndoStack(editor.getTextArea().getText());
+
+        // Set up listeners
+        setupUndoRedoHandlers();
         // User Presence
         VBox userList = new VBox(10);
         userList.setPadding(new Insets(10));
@@ -258,7 +290,6 @@ private Button backButton;
 
         primaryStage.setScene(new Scene(root, 800, 600));
     }
-
     private void updateUserList(JsonArray users) {
         VBox userList = (VBox) ((BorderPane) primaryStage.getScene().getRoot()).getRight();
         userList.getChildren().clear();
@@ -294,7 +325,12 @@ private Button backButton;
     }
 
     private void showShareCodes() {
-        Stage shareStage = new Stage();
+        // Close existing share window if open
+        if (shareStage != null) {
+            shareStage.close();
+        }
+
+        shareStage = new Stage();
         VBox root = new VBox(20,
                 new Label("Share This Document") {{
                     setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
@@ -306,6 +342,9 @@ private Button backButton;
                 new Label("Editor Code (Full Access)"),
                 new TextField(currentDocId + "-edit") {{
                     setEditable(false);
+                }},
+                new Button("Copy All") {{
+                    setOnAction(e -> copyAllCodesToClipboard());
                 }},
                 new Button("Close") {{
                     setOnAction(e -> shareStage.close());
@@ -341,6 +380,76 @@ private Button backButton;
                     showAndWait();
                 }}
         );
+    }
+
+
+
+    private void copyAllCodesToClipboard() {
+        String viewerCode = currentDocId + "-view";
+        String editorCode = currentDocId + "-edit";
+        String content = "Viewer Code: " + viewerCode + "\nEditor Code: " + editorCode;
+
+        Clipboard clipboard = Clipboard.getSystemClipboard();
+        ClipboardContent clipboardContent = new ClipboardContent();
+        clipboardContent.putString(content);
+        clipboard.setContent(clipboardContent);
+
+        showAlert("Copied", "All codes copied to clipboard!");
+    }
+
+    private void setupUndoRedoHandlers() {
+        TextArea textArea = editor.getTextArea();
+
+        // Track changes for undo
+        textArea.textProperty().addListener((obs, oldVal, newVal) -> {
+            if (!isUndoRedoOperation) {
+                saveStateToUndoStack(oldVal);
+                redoStack.clear(); // Clear redo stack on new changes
+            }
+        });
+
+        // Add keyboard shortcuts
+        textArea.addEventHandler(KeyEvent.KEY_PRESSED, event -> {
+            if (event.isShortcutDown()) {
+                if (event.getCode() == KeyCode.Z) {
+                    undo();
+                    event.consume();
+                } else if (event.getCode() == KeyCode.Y) {
+                    redo();
+                    event.consume();
+                }
+            }
+        });
+    }
+
+    private void saveStateToUndoStack(String text) {
+        if (text != null && !text.isEmpty()) {
+            undoStack.push(text);
+        }
+    }
+
+    private void undo() {
+        if (undoStack.size() > 1) { // Need at least 2 states (current + previous)
+            String current = undoStack.pop();
+            redoStack.push(current);
+            restoreState(undoStack.peek());
+        }
+    }
+
+    private void redo() {
+        if (!redoStack.isEmpty()) {
+            String state = redoStack.pop();
+            undoStack.push(state);
+            restoreState(state);
+        }
+    }
+
+    private void restoreState(String text) {
+        if (text != null) {
+            isUndoRedoOperation = true;
+            editor.getTextArea().setText(text);
+            isUndoRedoOperation = false;
+        }
     }
 
     public void stop() {
