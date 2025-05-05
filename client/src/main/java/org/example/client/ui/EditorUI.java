@@ -133,38 +133,44 @@ public class EditorUI {
 
         new Thread(() -> {
             try {
-                RestTemplate restTemplate = new RestTemplate();
-                HttpHeaders headers = new HttpHeaders();
-                headers.setContentType(MediaType.APPLICATION_JSON);
+                // Call DocumentService to join session
+                JsonObject response = documentService.joinSession(userId, sessionCode);
 
-                JsonObject request = new JsonObject();
-                request.addProperty("sessionCode", sessionCode);
-                request.addProperty("userId", this.userId);
+                // Update UI state from response
+                this.currentDocId = response.get("documentId").getAsString();
+                this.isEditor = response.get("isEditor").getAsBoolean();
+                String initialContent = response.get("content").getAsString();
 
-                HttpEntity<String> entity = new HttpEntity<>(request.toString(), headers);
-                ResponseEntity<String> response = restTemplate.postForEntity(
-                        API_BASE_URL + "/sessions/join",
-                        entity,
-                        String.class
-                );
-
-                JsonObject responseJson = JsonParser.parseString(response.getBody()).getAsJsonObject();
-                this.currentDocId = responseJson.get("documentId").getAsString();
-                this.isEditor = responseJson.get("isEditor").getAsBoolean();
-                String initialContent = responseJson.get("content").getAsString();
+                // Get share codes if available (only for editors)
+                String viewCode = response.has("viewCode") ?
+                        response.get("viewCode").getAsString() : currentDocId + "-view";
+                String editCode = response.has("editCode") ?
+                        response.get("editCode").getAsString() : currentDocId + "-edit";
 
                 Platform.runLater(() -> {
+                    // Show editor with existing content
                     showEditorUI(initialContent);
-                    processServerMessages();
-                    if (!isEditor) {
+
+                    // Show share codes if editor
+                    if (isEditor) {
+                        //showShareCodes(viewCode, editCode);
+                    } else {
                         editor.getTextArea().setEditable(false);
                         showAlert("Info", "You've joined as a viewer (read-only)");
                     }
+
+                    // Start listening for updates
+                    processServerMessages();
                 });
+
             } catch (Exception e) {
-                Platform.runLater(() ->
-                        showAlert("Error", "Failed to join session: " + e.getMessage())
-                );
+                Platform.runLater(() -> {
+                    Alert alert = new Alert(Alert.AlertType.ERROR);
+                    alert.setTitle("Connection Error");
+                    alert.setHeaderText("Failed to join session");
+                    alert.setContentText(e.getMessage());
+                    alert.showAndWait();
+                });
             }
         }).start();
     }

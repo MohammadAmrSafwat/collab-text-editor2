@@ -25,6 +25,28 @@ public class CollaborationService {
     public void addSession(Session session) {
         sessions.put(session.getSessionId(), session);
     }
+    public Session getSessionByCode(String code) {
+        if (code == null || code.isEmpty()) {
+            return null;
+        }
+
+        // Search through all sessions to find matching code
+        for (Session session : sessions.values()) {
+            if (code.equals(session.getEditorCode()) || code.equals(session.getViewerCode())) {
+                return session;
+            }
+
+            // Handle cases where code includes document ID prefix
+            if (code.startsWith(session.getSessionId())) {
+                String codeSuffix = code.substring(session.getSessionId().length());
+                if (("-view".equals(codeSuffix) && session.getViewerCode().equals(code)) ||
+                        ("-edit".equals(codeSuffix) && session.getEditorCode().equals(code))) {
+                    return session;
+                }
+            }
+        }
+        return null;
+    }
     public CRDTOperation processOperation(String sessionId, String userId, ClientOperation operation) {
         Session session = sessions.get(sessionId);
         if (session == null || !session.isEditor(userId)) {

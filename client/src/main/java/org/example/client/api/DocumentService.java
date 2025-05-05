@@ -6,6 +6,9 @@ import org.springframework.http.*;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.File;
+import java.nio.file.Files;
+
 public class DocumentService {
     private final RestTemplate restTemplate;
     private final String apiBaseUrl;
@@ -39,5 +42,48 @@ public class DocumentService {
         }
     }
 
+    public JsonObject importDocument(String userId, File file) throws Exception {
+        try {
+            String content = new String(Files.readAllBytes(file.toPath()));
 
+            JsonObject request = new JsonObject();
+            request.addProperty("userId", userId);
+            request.addProperty("content", content);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<String> entity = new HttpEntity<>(request.toString(), headers);
+
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    apiBaseUrl + "/documents/import",
+                    entity,
+                    String.class
+            );
+
+            return JsonParser.parseString(response.getBody()).getAsJsonObject();
+        } catch (RestClientException e) {
+            throw new Exception("Failed to import document: " + e.getMessage(), e);
+        }
+    }
+    public JsonObject joinSession(String userId, String sessionCode) throws Exception {
+        try {
+            JsonObject request = new JsonObject();
+            request.addProperty("userId", userId);
+            request.addProperty("sessionCode", sessionCode);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<String> entity = new HttpEntity<>(request.toString(), headers);
+
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    apiBaseUrl + "/sessions/join",
+                    entity,
+                    String.class
+            );
+
+            return JsonParser.parseString(response.getBody()).getAsJsonObject();
+        } catch (RestClientException e) {
+            throw new Exception("Failed to join session: " + e.getMessage(), e);
+        }
+    }
 }
