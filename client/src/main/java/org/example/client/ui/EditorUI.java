@@ -14,6 +14,7 @@ import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import org.example.client.api.DocumentService;
+import org.example.client.api.OperationService;
 import org.example.client.network.ServerConnection;
 import org.example.client.ui.components.TextAreaWithCursors;
 import org.springframework.http.*;
@@ -40,11 +41,13 @@ public class EditorUI {
     private final Deque<String> redoStack = new ArrayDeque<>();
     private boolean isUndoRedoOperation = false;
     private final DocumentService documentService;
+    private final OperationService operationService;
     private Button backButton;
-    public EditorUI(Stage primaryStage, ServerConnection connection, DocumentService documentService) {
+    public EditorUI(Stage primaryStage, ServerConnection connection, DocumentService documentService, OperationService operationService) {
         this.primaryStage = primaryStage;
         this.connection = connection;
         this.documentService = documentService;
+        this.operationService = operationService;
         connection.connect(WS_BASE_URL);
         this.userId = "user_" + System.currentTimeMillis();
         showInitialScreen();
@@ -81,6 +84,38 @@ public class EditorUI {
         primaryStage.show();
     }
 
+    private void setupTextListeners() {
+        editor.getTextArea().textProperty().addListener((obs, oldText, newText) -> {
+            if (isUndoRedoOperation) return;
+
+            // Calculate difference
+            int diffPos = 0;
+            while (diffPos < oldText.length() &&
+                    diffPos < newText.length() &&
+                    oldText.charAt(diffPos) == newText.charAt(diffPos)) {
+                diffPos++;
+            }
+
+            // Handle inserts
+            if (newText.length() > oldText.length()) {
+                char insertedChar = newText.charAt(diffPos);
+                try {
+                    operationService.insertOperation(currentDocId, userId, diffPos, insertedChar);
+                } catch (Exception e) {
+                    showAlert("Error", "Failed to sync insert: " + e.getMessage());
+                }
+            }
+            // Handle deletes
+            else if (newText.length() < oldText.length()) {
+                try {
+                    operationService.deleteOperation(currentDocId, userId, diffPos);
+                } catch (Exception e) {
+                    showAlert("Error", "Failed to sync delete: " + e.getMessage());
+                }
+            }
+        });
+    }
+
     private void importDocument() {
         FileChooser fileChooser = new FileChooser();
         fileChooser.getExtensionFilters().add(
@@ -90,19 +125,13 @@ public class EditorUI {
         if (file != null) {
             new Thread(() -> {
                 try {
-                    // Use DocumentService to import the file
+                    System.out.println("Attempting to import file: " + file.getPath());
                     JsonObject response = documentService.importDocument(userId, file);
+                    System.out.println("Import response: " + response);
 
-                    // Update UI state from response
                     this.currentDocId = response.get("documentId").getAsString();
                     this.isEditor = response.get("isEditor").getAsBoolean();
                     String content = response.get("content").getAsString();
-
-                    // Get share codes if available
-                    String viewCode = response.has("viewCode") ?
-                            response.get("viewCode").getAsString() : currentDocId + "-view";
-                    String editCode = response.has("editCode") ?
-                            response.get("editCode").getAsString() : currentDocId + "-edit";
 
                     Platform.runLater(() -> {
                         showEditorUI(content);
@@ -112,8 +141,10 @@ public class EditorUI {
                         processServerMessages();
                     });
                 } catch (Exception e) {
+                    System.err.println("Import failed: " + e.getMessage());
+                    e.printStackTrace();
                     Platform.runLater(() ->
-                            showAlert("Error", "Failed to import file: " + e.getMessage())
+                            showAlert("Import Error", "Failed to import file: " + e.getMessage())
                     );
                 }
             }).start();
@@ -253,7 +284,6 @@ public class EditorUI {
     }
 
     private void showEditorUI(String initialContent) {
-
         BorderPane root = new BorderPane();
 
         // Top Bar with buttons
@@ -313,6 +343,8 @@ public class EditorUI {
         root.setRight(userList);
 
         primaryStage.setScene(new Scene(root, 800, 600));
+        setupTextListeners();
+
     }
     private void updateUserList(JsonArray users) {
         VBox userList = (VBox) ((BorderPane) primaryStage.getScene().getRoot()).getRight();
