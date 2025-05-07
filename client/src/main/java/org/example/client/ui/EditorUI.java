@@ -373,9 +373,9 @@ public class EditorUI {
         topBar.setAlignment(Pos.CENTER_LEFT);
 
 
-        this.backButton = new Button("← Back");
-        backButton.setStyle("-fx-font-size: 14px;");
-        backButton.setOnAction(e -> returnToInitialScreen());
+        //this.backButton = new Button("← Back");
+        //backButton.setStyle("-fx-font-size: 14px;");
+        //backButton.setOnAction(e -> returnToInitialScreen());
 
 
         Button shareButton = new Button("Share");
@@ -390,7 +390,7 @@ public class EditorUI {
         redoButton.setOnAction(e -> redo());
 
         topBar.getChildren().addAll(
-                backButton,
+        //        backButton,
                 undoButton,
                 redoButton,
                 new Label("Document: " + currentDocId.substring(0, Math.min(8, currentDocId.length()))),
