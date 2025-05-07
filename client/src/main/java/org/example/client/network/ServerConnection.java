@@ -162,6 +162,19 @@ public class ServerConnection {
             System.err.println("Failed to send message: " + e.getMessage());
         }
     }
+    public void sendLeaveMessage(String sessionId, String userId) {
+        try {
+            JsonObject leaveMessage = new JsonObject();
+            leaveMessage.addProperty("type", "USER_LEAVE");
+            leaveMessage.addProperty("sessionId", sessionId);
+            leaveMessage.addProperty("userId", userId);
+
+            stompSession.send("/app/document/leave", leaveMessage.toString());
+            System.out.println("Sent leave message for user: " + userId);
+        } catch (Exception e) {
+            System.err.println("Failed to send leave message: " + e.getMessage());
+        }
+    }
     public void subscribeToSessionUpdates(String sessionId, Consumer<String> messageHandler) {
         if (!isConnected()) throw new IllegalStateException("Not connected");
 

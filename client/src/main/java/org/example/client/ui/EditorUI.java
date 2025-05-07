@@ -52,6 +52,10 @@ public class EditorUI {
         connection.connectInternal(WS_BASE_URL, null, null);
         this.userId = "user_" + System.currentTimeMillis();
         showInitialScreen();
+        // Set up close handler
+        primaryStage.setOnCloseRequest(event -> {
+            stop();
+        });
     }
 
     private void showInitialScreen() {
@@ -666,7 +670,7 @@ public class EditorUI {
     }
 
     public void stop() {
+        connection.sendLeaveMessage(currentDocId, userId);
         running = false;
-        connection.disconnect();
     }
 }
