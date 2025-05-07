@@ -18,7 +18,6 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 import org.example.client.api.DocumentService;
-import org.example.client.api.OperationService;
 import org.example.client.network.ServerConnection;
 import org.example.client.ui.components.TextAreaWithCursors;
 import org.springframework.http.*;
@@ -44,15 +43,13 @@ public class EditorUI {
     private final Deque<String> redoStack = new ArrayDeque<>();
     private boolean isUndoRedoOperation = false;
     private final DocumentService documentService;
-    private final OperationService operationService;
     private boolean isProcessingRemoteUpdate = false;
     private Button backButton;
-    public EditorUI(Stage primaryStage, ServerConnection connection, DocumentService documentService, OperationService operationService) {
+    public EditorUI(Stage primaryStage, ServerConnection connection, DocumentService documentService) {
         this.primaryStage = primaryStage;
         this.connection = connection;
         this.documentService = documentService;
-        this.operationService = operationService;
-        connection.connect(WS_BASE_URL);
+        connection.connectInternal(WS_BASE_URL, null, null);
         this.userId = "user_" + System.currentTimeMillis();
         showInitialScreen();
     }
@@ -152,11 +149,16 @@ public class EditorUI {
                     handlePasteOperation(oldText, newText, diffPos);
                 } else {
                     // Single character insert
-                    operationService.insertOperation(currentDocId, userId, diffPos, newText.charAt(diffPos));
+                    JsonObject data = new JsonObject();
+                    data.addProperty("position", diffPos);
+                    data.addProperty("character", newText.charAt(diffPos));
+                    connection.sendOperation("insert", data, currentDocId, userId);
                 }
             }
             else if (newText.length() < oldText.length()) {
-                operationService.deleteOperation(currentDocId, userId, diffPos);
+                JsonObject data = new JsonObject();
+                data.addProperty("position", diffPos);
+                connection.sendOperation("delete", data, currentDocId, userId);
             }
         });
 
@@ -194,8 +196,10 @@ public class EditorUI {
                 Thread.currentThread().interrupt(); // restore interrupt status
                 // handle interruption if needed
                 break;}
-
-                operationService.insertOperation(currentDocId, userId, pastePosition + i, c);
+            JsonObject data = new JsonObject();
+            data.addProperty("position", pastePosition);
+            data.addProperty("character", c);
+            connection.sendOperation("insert", data, currentDocId, userId);
         }
     }
     private void importDocument() {
@@ -221,6 +225,7 @@ public class EditorUI {
                     Platform.runLater(() -> {
                         showEditorUI("");
                         showShareCodes();
+                        //start listining for updates
                         processServerMessages();
 
                         // 4. After UI is ready, paste the entire content

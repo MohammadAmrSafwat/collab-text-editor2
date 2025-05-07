@@ -1,8 +1,6 @@
 package org.example.client.network;
 
 import com.google.gson.JsonObject;
-import org.example.client.model.ClientMessage;
-import org.springframework.messaging.converter.MappingJackson2MessageConverter;
 import org.springframework.messaging.converter.StringMessageConverter;
 import org.springframework.messaging.simp.stomp.*;
 import org.springframework.util.concurrent.ListenableFutureCallback;
@@ -23,31 +21,10 @@ public class ServerConnection {
     private WebSocketStompClient stompClient;
     private StompSession stompSession;
     private final BlockingQueue<String> messageQueue = new LinkedBlockingQueue<>();
-    private String sessionId;
-    private String userId;
     private final AtomicBoolean connected = new AtomicBoolean(false);
 
-    /**
-     * Connects to the WebSocket server without joining a specific session
-     * @param serverUrl The base server URL (e.g., "http://localhost:8080")
-     */
-    public void connect(String serverUrl) {
-        connectInternal(serverUrl, null, null);
-    }
-
-    /**
-     * Connects to the WebSocket server and joins a specific collaboration session
-     * @param serverUrl The base server URL (e.g., "http://localhost:8080")
-     * @param sessionId The collaboration session ID
-     * @param userId The current user's ID
-     */
-    public void connect(String serverUrl, String sessionId, String userId) {
-        this.sessionId = sessionId;
-        this.userId = userId;
-        connectInternal(serverUrl, sessionId, userId);
-    }
-
-    private void connectInternal(String serverUrl, String sessionId, String userId) {
+    //connect to websocket
+    public void connectInternal(String serverUrl, String sessionId, String userId) {
         if (connected.get()) {
             disconnect();
         }
@@ -132,12 +109,7 @@ public class ServerConnection {
         );
     }
 
-    /**
-     * Sends an operation to the server
-     * @param type The operation type (e.g., "INSERT", "DELETE")
-     * @param data The operation payload
-     * @throws IllegalStateException if not connected to a session
-     */
+    //send operation to the server
     public void sendOperation(String type, Object data, String sessionId, String userId) throws IllegalStateException {
         System.out.println("[DEBUG] Attempting send - Connected: " + isConnected() +
                 ", SessionID: " + sessionId +
@@ -220,11 +192,6 @@ public class ServerConnection {
             }
         });
     }
-    /**
-     * Receives a message from the server
-     * @return The received message, or null if timeout occurs
-     * @throws InterruptedException if interrupted while waiting
-     */
     public String receiveMessage() throws InterruptedException {
         try {
             return messageQueue.poll(5, TimeUnit.SECONDS);

@@ -3,7 +3,6 @@ package org.example.client;
 import javafx.application.Application;
 import javafx.stage.Stage;
 import org.example.client.api.DocumentService;
-import org.example.client.api.OperationService;
 import org.example.client.network.ServerConnection;
 import org.example.client.ui.EditorUI;
 
@@ -16,8 +15,7 @@ public class MainApp extends Application {
             //initializing the connections and document service
             ServerConnection connection = new ServerConnection();
             DocumentService documentService = new DocumentService(API_BASE_URL);
-            OperationService OperationService = new OperationService(connection);
-            new EditorUI(primaryStage, connection, documentService, OperationService);
+            new EditorUI(primaryStage, connection, documentService);
         } catch (Exception e) {
             System.err.println("Failed to start application: " + e.getMessage());
             e.printStackTrace();
