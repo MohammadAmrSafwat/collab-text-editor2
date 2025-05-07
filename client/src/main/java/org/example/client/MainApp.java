@@ -9,11 +9,11 @@ import org.example.client.ui.EditorUI;
 
 public class MainApp extends Application {
     private static final String API_BASE_URL = "http://localhost:8080/api";
-    private static final String WS_BASE_URL = "ws://localhost:8080";
 
     @Override
     public void start(Stage primaryStage) {
         try {
+            //initializing the connections and document service
             ServerConnection connection = new ServerConnection();
             DocumentService documentService = new DocumentService(API_BASE_URL);
             OperationService OperationService = new OperationService(connection);

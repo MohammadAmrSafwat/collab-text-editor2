@@ -41,35 +41,6 @@ public class DocumentService {
             throw new Exception("Failed to connect to server. Please check if the server is running.", e);
         }
     }
-
-    public JsonObject importDocument(String userId, File file) throws Exception {
-        try {
-            String content = new String(Files.readAllBytes(file.toPath()));
-
-            JsonObject request = new JsonObject();
-            request.addProperty("userId", userId);
-            request.addProperty("content", content);
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            HttpEntity<String> entity = new HttpEntity<>(request.toString(), headers);
-
-            // Corrected endpoint URL - removed duplicate 'documents'
-            ResponseEntity<String> response = restTemplate.postForEntity(
-                    apiBaseUrl + "/documents/import",  // Changed from "/documents/documents/import"
-                    entity,
-                    String.class
-            );
-
-            if (!response.getStatusCode().is2xxSuccessful()) {
-                throw new Exception("Server returned: " + response.getStatusCode());
-            }
-
-            return JsonParser.parseString(response.getBody()).getAsJsonObject();
-        } catch (Exception e) {
-            throw new Exception("Failed to import document: " + e.getMessage(), e);
-        }
-    }
     public JsonObject joinSession(String userId, String sessionCode) throws Exception {
         try {
             JsonObject request = new JsonObject();
