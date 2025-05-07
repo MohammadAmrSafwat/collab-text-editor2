@@ -1,8 +1,11 @@
 package org.example.client.ui;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -13,6 +16,7 @@ import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 import org.example.client.api.DocumentService;
 import org.example.client.api.OperationService;
 import org.example.client.network.ServerConnection;
@@ -27,7 +31,6 @@ import java.io.File;
 import java.nio.file.Files;
 
 public class EditorUI {
-    private static final String API_BASE_URL = "http://localhost:8080/api";
     private static final String WS_BASE_URL = "ws://localhost:8080";
     private Stage shareStage;
     private final Stage primaryStage;
@@ -106,6 +109,23 @@ public class EditorUI {
             }
         });
     }
+    private void handlePresenceUpdate(String message) {
+        Platform.runLater(() -> {
+            try {
+                JsonObject update = JsonParser.parseString(message).getAsJsonObject();
+                String type = update.get("type").getAsString();
+
+                if ("USER_PRESENCE".equals(type)) {
+                    JsonArray activeUsers = update.get("activeUsers").getAsJsonArray();
+                    updateUserList(activeUsers);
+                    System.out.println("Handle Presence Update");
+                }
+            } catch (Exception e) {
+                System.err.println("Error processing presence update: " + e.getMessage());
+            }
+        });
+    }
+
     private void setupTextListeners() {
         TextArea textArea = editor.getTextArea();
 
@@ -113,6 +133,9 @@ public class EditorUI {
         textArea.textProperty().addListener((obs, oldText, newText) -> {
             if (isUndoRedoOperation || isProcessingRemoteUpdate) return;
 
+            textArea.caretPositionProperty().addListener((obs1, oldVal, newVal) -> {
+                sendCurrentPosition();
+            });
             // Calculate position difference
             int diffPos = 0;
             while (diffPos < oldText.length() &&
@@ -166,7 +189,7 @@ public class EditorUI {
             char c = pastedContent.charAt(i);
             try {
                 //ensure they are send in the right order
-                Thread.sleep(15); // 10 milliseconds delay
+                Thread.sleep(10); // 10 milliseconds delay
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt(); // restore interrupt status
                 // handle interruption if needed
@@ -331,11 +354,13 @@ public class EditorUI {
             case "DOCUMENT_UPDATE":
                 editor.setInitialContent(json.get("content").getAsString());
                 break;
-            case "CURSOR_UPDATE":
-                editor.updateRemoteCursor(
-                        senderUserId,
-                        json.get("position").getAsInt()
-                );
+            case "USER_PRESENCE":
+                // This will contain active users and their positions
+                JsonElement usersElem = json.get("activeUsers");
+                if (usersElem != null && usersElem.isJsonArray()) {
+                    updateUserList(usersElem.getAsJsonArray());
+                }
+                else{System.out.println("Empty");}
                 break;
         }
     }
@@ -397,25 +422,82 @@ public class EditorUI {
         root.setTop(topBar);
         root.setCenter(editor);
         root.setRight(userList);
+        Platform.runLater(() -> {
+            sendCurrentPosition();
+        });
 
+        // Start periodic position updates (every 500ms)
+        Timeline positionUpdater = new Timeline(
+                new KeyFrame(Duration.millis(500), e -> sendCurrentPosition())
+        );
+        positionUpdater.setCycleCount(Timeline.INDEFINITE);
+        positionUpdater.play();
         primaryStage.setScene(new Scene(root, 800, 600));
         setupTextListeners();
         connection.subscribeToSessionUpdates(currentDocId, this::handleServerUpdate);
+        connection.subscribeToPresenceUpdates(currentDocId, this::handlePresenceUpdate);
 
     }
     private void updateUserList(JsonArray users) {
         VBox userList = (VBox) ((BorderPane) primaryStage.getScene().getRoot()).getRight();
         userList.getChildren().clear();
-        userList.getChildren().add(new Label("Active Users") {{
-            setStyle("-fx-font-weight: bold;");
-        }});
 
-        users.forEach(user -> {
-            String userId = user.getAsString();
-            userList.getChildren().add(new Label(userId) {{
-                setStyle("-fx-text-fill: " + getColorForUser(userId) + ";");
-            }});
-        });
+        Label usersLabel = new Label("Active Users");
+        usersLabel.setStyle("-fx-font-weight: bold;");
+        userList.getChildren().add(usersLabel);
+
+        for (JsonElement userElement : users) {
+            if (!userElement.isJsonObject()) continue;
+
+            JsonObject user = userElement.getAsJsonObject();
+
+            // Safe field access with defaults
+            String userId = user.has("userId") ? user.get("userId").getAsString() : "unknown";
+            boolean isEditor = user.has("isEditor") && user.get("isEditor").getAsBoolean();
+
+            // Handle potentially missing lineNumber
+            int lineNumber = 0; // Default value
+            if (isEditor && user.has("lineNumber")) {
+                try {
+                    lineNumber = user.get("lineNumber").getAsInt();
+                } catch (Exception e) {
+                    System.err.println("Invalid lineNumber for user " + userId);
+                }
+            }
+
+            String userType = isEditor ? " (Editor)" : " (Viewer)";
+            String lineInfo = isEditor ? " - Line " + (lineNumber + 1) : "";
+            Label userLabel = new Label(userId + userType + lineInfo);
+            userLabel.setStyle("-fx-text-fill: " + getColorForUser(userId) + ";");
+            userList.getChildren().add(userLabel);
+        }
+    }
+    private void sendCurrentPosition() {
+        if (currentDocId == null) return;
+
+        TextArea textArea = editor.getTextArea();
+        int caretPosition = textArea.getCaretPosition();
+        String text = textArea.getText();
+
+        // Calculate line number
+        int lineNumber = 0;
+        int lastNewline = 0;
+        while (lastNewline != -1 && lastNewline < caretPosition) {
+            lastNewline = text.indexOf('\n', lastNewline);
+            if (lastNewline != -1 && lastNewline < caretPosition) {
+                lineNumber++;
+                lastNewline++;
+            }
+        }
+
+        JsonObject positionUpdate = new JsonObject();
+        positionUpdate.addProperty("type", "POSITION_UPDATE");
+        positionUpdate.addProperty("documentId", currentDocId);
+        positionUpdate.addProperty("userId", userId);
+        positionUpdate.addProperty("isEditor", isEditor);
+        positionUpdate.addProperty("lineNumber", lineNumber);
+
+        connection.sendPositionUpdate(currentDocId, userId, isEditor, lineNumber);
     }
     private void returnToInitialScreen() {
         // Clean up resources

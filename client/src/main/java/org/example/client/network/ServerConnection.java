@@ -86,8 +86,8 @@ public class ServerConnection {
                         }
                     });
 
-                    // Add subscription for cursor updates if needed
-                    session.subscribe("/topic/cursors." + sessionId, new StompFrameHandler() {
+                    // Subscribe to presence updates
+                    session.subscribe("/topic/presence." + sessionId, new StompFrameHandler() {
                         @Override
                         public Type getPayloadType(StompHeaders headers) {
                             return String.class;
@@ -95,7 +95,9 @@ public class ServerConnection {
 
                         @Override
                         public void handleFrame(StompHeaders headers, Object payload) {
-                            // Handle cursor updates
+                            if (payload != null) {
+                                messageQueue.add(payload.toString());
+                            }
                         }
                     });
                 }
@@ -170,10 +172,43 @@ public class ServerConnection {
             System.err.println("Failed to send operation: " + e.getMessage());
         }
     }
+    public void sendPositionUpdate(String sessionId, String userId, boolean isEditor, int lineNumber) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("type", "POSITION_UPDATE");
+        payload.addProperty("sessionId", sessionId);
+        payload.addProperty("userId", userId);
+        payload.addProperty("isEditor", isEditor);
+        payload.addProperty("lineNumber", lineNumber);
+        if (!isConnected() || stompSession == null || !stompSession.isConnected()) {
+            throw new IllegalStateException("Not connected to WebSocket server");
+        }
+
+        try {
+            stompSession.send("/app/document/position", payload.toString());
+            System.out.println("Sent update in line: " + payload.toString());
+        } catch (Exception e) {
+            System.err.println("Failed to send message: " + e.getMessage());
+        }
+    }
     public void subscribeToSessionUpdates(String sessionId, Consumer<String> messageHandler) {
         if (!isConnected()) throw new IllegalStateException("Not connected");
 
         stompSession.subscribe("/topic/session." + sessionId, new StompFrameHandler() {
+            @Override
+            public Type getPayloadType(StompHeaders headers) {
+                return String.class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+                messageHandler.accept((String) payload);
+            }
+        });
+    }
+    public void subscribeToPresenceUpdates(String sessionId, Consumer<String> messageHandler) {
+        if (!isConnected()) throw new IllegalStateException("Not connected");
+
+        stompSession.subscribe("/topic/presence." + sessionId, new StompFrameHandler() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
                 return String.class;

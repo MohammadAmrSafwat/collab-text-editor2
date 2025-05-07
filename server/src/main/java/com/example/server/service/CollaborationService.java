@@ -78,10 +78,5 @@ public class CollaborationService {
         return sessions.get(sessionId);
     }
 
-    public void updateCursor(String sessionId, String userId, int position) {
-        Session session = sessions.get(sessionId);
-        if (session != null) {
-            session.setCursor(userId, position);
-        }
-    }
+
 }

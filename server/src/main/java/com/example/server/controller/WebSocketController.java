@@ -58,21 +58,4 @@ public class WebSocketController {
                 collaborationService.getSession(sessionId).getCrdt().getContent()
         );
     }
-
-    @MessageMapping("/session/{sessionId}/cursor")
-    public void handleCursorUpdate(
-            @DestinationVariable String sessionId,
-            CursorUpdate update
-    ) {
-        collaborationService.updateCursor(
-                sessionId,
-                update.getUserId(),
-                update.getPosition()
-        );
-
-        messagingTemplate.convertAndSend(
-                "/topic/session/" + sessionId + "/cursors",
-                update
-        );
-    }
 }

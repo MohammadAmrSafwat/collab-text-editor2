@@ -13,7 +13,8 @@ public class Session {
     private Set<String> editors = ConcurrentHashMap.newKeySet();
     private Set<String> viewers = ConcurrentHashMap.newKeySet();
 
-    private Map<String, Integer> userCursors = new ConcurrentHashMap<>(); // userId → cursor index
+    // Track editor line positions only
+    private Map<String, Integer> editorLinePositions = new ConcurrentHashMap<>();
 
     private CRDT crdt = new CRDT(); // tree-based CRDT for this session
 
@@ -25,6 +26,20 @@ public class Session {
         this.editorCode =   docide.substring(0, docide.length() - 3);
         this.viewerCode =  docidv.substring(0, docidv.length() - 3) ;
     }
+    public void updateEditorLinePosition(String userId, int lineNumber) {
+        if (editors.contains(userId)) {
+            editorLinePositions.put(userId, lineNumber);
+        }
+    }
+    public Set<String> getAllUsers() {
+        Set<String> allUsers = new HashSet<>();
+        allUsers.addAll(editors);
+        allUsers.addAll(viewers);
+        return allUsers;
+    }
+    public Map<String, Integer> getEditorPositions() {
+        return new HashMap<>(editorLinePositions);
+    }
 
     private String generateRandomCode(int lenght) {
         String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"; // Letters AND numbers
@@ -35,7 +50,20 @@ public class Session {
         }
         return sb.toString();
     }
+    public void addUser(String userId, boolean isEditor) {
+        if (isEditor) {
+            editors.add(userId);
+        } else {
+            viewers.add(userId);
+        }
+    }
 
+    // Remove user from session
+    public void removeUser(String userId) {
+        editors.remove(userId);
+        viewers.remove(userId);
+        editorLinePositions.remove(userId);
+    }
     public String getSessionId() {
         return sessionId;
     }
@@ -74,18 +102,6 @@ public class Session {
 
     public boolean isParticipant(String userId) {
         return isEditor(userId) || isViewer(userId);
-    }
-
-    public void setCursor(String userId, int position) {
-        userCursors.put(userId, position);
-    }
-
-    public int getCursor(String userId) {
-        return userCursors.getOrDefault(userId, 0);
-    }
-
-    public Map<String, Integer> getUserCursors() {
-        return userCursors;
     }
 
     public CRDT getCrdt() {
