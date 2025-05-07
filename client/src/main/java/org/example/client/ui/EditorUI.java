@@ -107,9 +107,11 @@ public class EditorUI {
         });
     }
     private void setupTextListeners() {
-        editor.getTextArea().textProperty().addListener((obs, oldText, newText) -> {
-            if (isUndoRedoOperation || isProcessingRemoteUpdate) return;
+        TextArea textArea = editor.getTextArea();
 
+        // Existing text change listener
+        textArea.textProperty().addListener((obs, oldText, newText) -> {
+            if (isUndoRedoOperation || isProcessingRemoteUpdate) return;
 
             // Calculate position difference
             int diffPos = 0;
@@ -121,12 +123,57 @@ public class EditorUI {
 
             // Handle insert/delete via WebSocket
             if (newText.length() > oldText.length()) {
-                operationService.insertOperation(currentDocId, userId, diffPos, newText.charAt(diffPos));
+                // Check if this is a multi-character insert (likely paste)
+                if (newText.length() - oldText.length() > 1) {
+                    // Handle paste operation
+                    handlePasteOperation(oldText, newText, diffPos);
+                } else {
+                    // Single character insert
+                    operationService.insertOperation(currentDocId, userId, diffPos, newText.charAt(diffPos));
+                }
             }
             else if (newText.length() < oldText.length()) {
                 operationService.deleteOperation(currentDocId, userId, diffPos);
             }
         });
+
+        // Add paste event handler to detect paste operations
+        textArea.addEventHandler(KeyEvent.KEY_PRESSED, event -> {
+            if (event.isShortcutDown() && event.getCode() == KeyCode.V) {
+                // Store the current text before paste occurs
+                String textBeforePaste = textArea.getText();
+                int caretPosition = textArea.getCaretPosition();
+
+                // Use Platform.runLater to check the text after paste has occurred
+                Platform.runLater(() -> {
+                    String textAfterPaste = textArea.getText();
+                    if (textAfterPaste.length() - textBeforePaste.length() > 1) {
+                        // This was a paste operation
+                        handlePasteOperation(textBeforePaste, textAfterPaste, caretPosition);
+                    }
+                });
+            }
+        });
+    }
+
+    private void handlePasteOperation(String oldText, String newText, int pastePosition) {
+        // Calculate the pasted content
+        System.out.println("paste");
+        String pastedContent = newText.substring(pastePosition, pastePosition + (newText.length() - oldText.length()));
+
+        // Send insert operations for each character in the pasted content
+        for (int i = 0; i < pastedContent.length(); i++) {
+            char c = pastedContent.charAt(i);
+            try {
+                //ensure they are send in the right order
+                Thread.sleep(15); // 10 milliseconds delay
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt(); // restore interrupt status
+                // handle interruption if needed
+                break;}
+
+                operationService.insertOperation(currentDocId, userId, pastePosition + i, c);
+        }
     }
     private void importDocument() {
         FileChooser fileChooser = new FileChooser();
@@ -137,21 +184,30 @@ public class EditorUI {
         if (file != null) {
             new Thread(() -> {
                 try {
-                    System.out.println("Attempting to import file: " + file.getPath());
-                    JsonObject response = documentService.importDocument(userId, file);
-                    System.out.println("Import response: " + response);
+                    // 1. First create a new empty document
+                    System.out.println("Creating new document for import...");
+                    JsonObject createResponse = documentService.createDocument(userId);
+                    this.currentDocId = createResponse.get("documentId").getAsString();
+                    this.isEditor = true;
 
-                    this.currentDocId = response.get("documentId").getAsString();
-                    this.isEditor = response.get("isEditor").getAsBoolean();
-                    String content = response.get("content").getAsString();
+                    // 2. Read the file content
+                    System.out.println("Reading file content...");
+                    String fileContent = new String(Files.readAllBytes(file.toPath()));
 
+                    // 3. Show the UI with empty content first
                     Platform.runLater(() -> {
-                        showEditorUI(content);
-                        if (isEditor) {
-                            showShareCodes();
-                        }
+                        showEditorUI("");
+                        showShareCodes();
                         processServerMessages();
+
+                        // 4. After UI is ready, paste the entire content
+                        // This will trigger the normal paste handling we implemented earlier
+                        editor.getTextArea().setText(fileContent);
+
+                        // 5. Save initial state to undo stack
+                        saveStateToUndoStack(fileContent);
                     });
+
                 } catch (Exception e) {
                     System.err.println("Import failed: " + e.getMessage());
                     e.printStackTrace();

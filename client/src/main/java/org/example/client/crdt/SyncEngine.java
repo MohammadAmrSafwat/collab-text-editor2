@@ -16,6 +16,7 @@ public class SyncEngine {
 
         // Handle insertions
         if (newText.length() > lastKnownText.length()) {
+            System.out.println("this is SyncEngine");
             int pos = 0;
             while (pos < lastKnownText.length() &&
                     lastKnownText.charAt(pos) == newText.charAt(pos)) {

@@ -94,7 +94,16 @@ public class CRDT {
         }
         return content.toString();
     }
-
+    public synchronized int getLength() {
+        int length = 0;
+        List<CRDTNode> nodes = getSortedNodes();
+        for (CRDTNode node : nodes) {
+            if (!node.isDeleted()) {
+                length++;
+            }
+        }
+        return length;
+    }
     private List<CRDTNode> getSortedNodes() {
         List<CRDTNode> result = new ArrayList<>();
         traverseTree(root, result);
